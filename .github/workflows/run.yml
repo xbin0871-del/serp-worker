@@ -1,19 +1,25 @@
-name: 跑搜索任务
-
+name: 报备推送
 on:
+  push:
+    branches: [main]
+  workflow_dispatch:
   schedule:
     - cron: '0 1 * * *'
-  workflow_dispatch:
 
 jobs:
   run:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - name: Set up Python
+        uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
-      - run: pip install -r requirements.txt
-      - run: python main.py
+          python-version: '3.10'
+      - name: Install requirements
+        run: pip install -r requirements.txt
+      - name: Run bot
         env:
-          SERPAPI_API_KEY: ${{ secrets.SERPAPI_API_KEY }}
+          TG_TOKEN: ${{ secrets.TG_TOKEN }}
+          TG_GROUP: ${{ secrets.TG_GROUP }}
+          SERPAPI_A: ${{ secrets.SERPAPI_A }}
+        run: python main.py
