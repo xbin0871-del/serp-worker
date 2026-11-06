@@ -1,1 +1,2 @@
-google-search-results
+flask>=3.0
+requests>=2.31.0
