@@ -1,14 +1,50 @@
-import os, requests
+import os, requests, json, datetime
 
 TOKEN = os.getenv("TG_TOKEN")
-# 优先读密钥，如果没读到，强制用这个真实ID兜底
+# 优先读密钥，兜底用真实群ID
 GROUP_ID = os.getenv("TG_GROUP", "-1004466833723")
 
-print("准备发到:", GROUP_ID) # 日志里必须看到 -1004466833723
+# === 业务数据（后续这里替换成真实数据源） ===
+order = {
+    "group":   "公群H组 1111",
+    "side":    "供押",
+    "amount":  "1111111U",
+    "counter": "HX支付集团（供方老板）",
+    "no":      "HB20261106-001",
+    "time":    datetime.datetime.now().strftime("%Y-%m-%d %H:%M"),
+}
+# ==============================================
+
+lines = [
+    "📋 **新报备待确认**",
+    f"单号：`{order['no']}`",
+    f"组别：{order['group']}",
+    f"方向：{order['side']}  {order['amount']}",
+    f"对手：{order['counter']}",
+    f"时间：{order['time']}",
+    "",
+    "请下方操作 👇",
+]
+text = "\n".join(lines)
+
+# 按钮结构（Telegram Inline Keyboard）
+keyboard = {
+    "inline_keyboard": [
+        [
+            {"text": "✅ 确认",  "callback_data": f"ok::{order['no']}"},
+            {"text": "❓ 有疑问", "callback_data": f"check::{order['no']}"},
+            {"text": "❌ 驳回",  "callback_data": f"reject::{order['no']}"},
+        ]
+    ]
+}
 
 url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
-data = {"chat_id": GROUP_ID, "text": "报备文本测试"}
-res = requests.post(url, data=data)
+res = requests.post(url, json={
+    "chat_id":      GROUP_ID,
+    "text":         text,
+    "parse_mode":   "Markdown",
+    "reply_markup": json.dumps(keyboard, ensure_ascii=False),
+})
 
-print("状态:", res.status_code)
-print("返回:", res.text)
+print("准备发到:", GROUP_ID)
+print("状态:", res.status_code, "| ok:", res.json().get("ok"))
