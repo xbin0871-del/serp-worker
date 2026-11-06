@@ -1,10 +1,12 @@
-import os, requests, json, datetime
+import os
+import requests
+import json
+import datetime
 
 TOKEN = os.getenv("TG_TOKEN")
-# 优先读密钥，兜底用真实群ID
 GROUP_ID = os.getenv("TG_GROUP", "-1004466833723")
 
-# === 业务数据（后续这里替换成真实数据源） ===
+# === 业务数据（测试写死，后续接表格/API） ===
 order = {
     "group":   "公群H组 1111",
     "side":    "供押",
@@ -27,7 +29,6 @@ lines = [
 ]
 text = "\n".join(lines)
 
-# 按钮结构（Telegram Inline Keyboard）
 keyboard = {
     "inline_keyboard": [
         [
