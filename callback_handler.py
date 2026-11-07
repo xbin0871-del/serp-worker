@@ -1,43 +1,64 @@
-import os, requests
+import os
+import requests
 from flask import Flask, request
 
-TOKEN    = os.getenv("TG_TOKEN")
-GROUP_ID = os.getenv("TG_GROUP", "-1004466833723")
-PORT     = int(os.getenv("PORT", 9000))
+TOKEN = "9195362168:AAFE1zCNmbRqUu93850Re3urZd8ItHgYKRA"
 app = Flask(__name__)
 
+# 按钮回调后的回复文字
 ANSWER = {
-    "ok":     "✅ 已确认，客服跟进中",
-    "check":  "❓ 已标记疑问，请补充说明确",
-    "reject": "❌ 已驳回，本单作废",
+    "ok": "✅ 已确认，客服跟进中",
+    "check": "🔍 已标记核查",
+    "reject": "❌ 已驳回",
 }
 
 @app.get("/")
-def ping():
+def home():
     return "ok", 200
 
 @app.post(f"/{TOKEN}")
 def cb():
-    d = request.get_json(force=True)
-    q   = d.get("callback_query", {})
-    act, no = (q.get("callback_data", "").split("::") + [""])[:2]
-    user   = q.get("from", {}).get("first_name", "未知")
-    print(f"点击: {act} | 单号: {no} | 人: {user}")
+    d = request.get_json(silent=True) or {}
+    chat_id = None
 
-    requests.post(
-        f"https://api.telegram.org/bot{TOKEN}/answerCallbackQuery",
-        json={"callback_query_id": q["id"], "text": ANSWER.get(act, "已收到")},
-        timeout=5,
-    )
-    if act in ANSWER:
+    # 1) 普通消息（/verify 等）
+    msg = d.get("message")
+    if msg:
+        chat_id = msg.get("chat", {}).get("id")
+        text = (msg.get("text") or "").strip()
+        if text == "/verify":
+            requests.post(
+                f"https://api.telegram.org/bot{TOKEN}/sendMessage",
+                json={"chat_id": chat_id, "text": "✅ 验证已收到，服务正常运行中"},
+                timeout=10,
+            )
+        return "ok", 200
+
+    # 2) 按钮回调
+    q = d.get("callback_query")
+    if not q or "id" not in q:
+        return "ok", 200
+
+    act = q.get("data")
+    chat_id = q.get("message", {}).get("chat", {}).get("id")
+
+    try:
         requests.post(
-            f"https://api.telegram.org/bot{TOKEN}/sendMessage",
-            json={"chat_id": GROUP_ID,
-                  "text": f"单号 `{no}`\n处理：{ANSWER[act]}\n操作人：{user}",
-                  "parse_mode": "Markdown"},
-            timeout=8,
+            f"https://api.telegram.org/bot{TOKEN}/answerCallbackQuery",
+            json={"callback_query_id": q["id"], "text": ANSWER.get(act, "已收到")},
+            timeout=10,
         )
+        if chat_id:
+            requests.post(
+                f"https://api.telegram.org/bot{TOKEN}/sendMessage",
+                json={"chat_id": chat_id, "text": f"处理：{act or '按钮'}"},
+                timeout=10,
+            )
+        print(f"点击: {act}")
+    except Exception as e:
+        print(f"处理异常: {e}")
+
     return "ok", 200
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=PORT)
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 10000)))
