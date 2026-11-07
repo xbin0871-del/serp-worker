@@ -1,35 +1,30 @@
 import os
 from flask import Flask, request
-from telegram import Update
-from telegram.ext import Application, CommandHandler, ContextTypes
+import telebot
 
 TOKEN = os.environ.get("BOT_TOKEN", "9195362168:AAFE1zCNmbRqUu93850Re3urZd8ItHgYKRA")
+WEBHOOK_URL = "https://serp-worker.onrender.com"
 
+bot = telebot.TeleBot(TOKEN)
 app = Flask(__name__)
-# 强制使用同步 HTTP 客户端，彻底避开所有事件循环坑
-application = Application.builder().token(TOKEN).concurrent_updates(True).build()
 
-async def verify(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("✅ 跑通了！")
-
-application.add_handler(CommandHandler("verify", verify))
-
-# 纯同步路由
+# 纯同步处理，零异步坑
 @app.route("/", methods=["POST"])
 def webhook():
-    try:
-        update = Update.de_json(request.get_json(force=True), application.bot)
-        # 使用 PTB 官方同步调度，无 asyncio.run
-        application.update_queue.put_nowait(update)
-        return "ok", 200
-    except Exception as e:
-        return str(e), 500
+    update = telebot.types.Update.de_json(request.stream.read().decode("utf-8"))
+    bot.process_new_updates([update])
+    return "OK", 200
 
-@app.route("/", methods=["GET"])
+@bot.message_handler(commands=["verify"])
+def verify(msg):
+    bot.send_message(msg.chat.id, "✅ 跑通了！")
+
+@app.route("/")
 def home():
     return "Bot is running"
 
 if __name__ == "__main__":
-    # 预初始化
-    application.initialize()
+    # 启动时设置 Webhook
+    bot.remove_webhook()
+    bot.set_webhook(url=WEBHOOK_URL)
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 10000)))
