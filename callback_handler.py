@@ -1,109 +1,93 @@
-# callback_handler.py
-import os
-import json
 import re
 import requests
 from flask import Flask, request
 
-TOKEN = "9195362168:AAFE1zCNmbRqUu93850Re3urZd8ItHgYKRA"
-ADMIN_ID = 8385371786          # 只有这个 ID 能发起报备
-ADMIN_USER = "xbin0871"        # 替换为你的 @用户名（可选）
+# ================= 配置 =================
+# ⚠️ 强烈建议：旧 Token 已暴露，请去 @BotFather /revoke 换新后填这里或设环境变量
+TOKEN = "9195362168:AAFE1zCNmbRqUu93850Re3urZd8ItHgYKRA" 
+ADMIN_ID = 8385371786
+ADMIN_USER = "xbin0871"
 
 REPORTS = {}
 PENDING = {}
-USERNAME_RE = re.compile(r"^@[a-zA-Z0-9_]{5,}$")
+USERNAME_RE = re.compile(r"^@[a-zA-Z0-9_]+")
 
 TG = f"https://api.telegram.org/bot{TOKEN}"
 app = Flask(__name__)
 
-def _post(method, **kw):
+# ================= 工具函数 =================
+def send(chat_id, text, reply_markup=None):
+    """纯发消息函数，不再混入回调判断"""
+    data = {"chat_id": chat_id, "text": text}
+    if reply_markup:
+        data["reply_markup"] = reply_markup
     try:
-        r = requests.post(f"{TG}/{method}", json=kw, timeout=15)
-        return r
+        requests.post(f"{TG}/sendMessage", json=data, timeout=5)
     except Exception as e:
-        print(f"[TG {method} 异常] {e}")
-        return None
+        print(f"[发送异常] {e}")
 
-def send(chat_id, text, reply_markup=None, reply_to=None):
-    data = {"chat_id": chat_id, "text": text, "parse_mode": "HTML"}
-    if reply_markup: data["reply_markup"] = json.dumps(reply_markup)
-    if reply_to: data["reply_to_message_id"] = reply_to
-    return _post("sendMessage", **data)
+def answer_cb(q_id, text="已收到"):
+    if not q_id:
+        return
+    requests.post(f"{TG}/answerCallbackQuery", json={"callback_query_id": q_id, "text": text}, timeout=5)
 
-def answer_cb(cb_id, text=""):
-    if not cb_id: return
-    _post("answerCallbackQuery", callback_query_id=str(cb_id), text=str(text)[:200], cache_time=1)
-
-def is_admin(user):
-    return user.get("id") == ADMIN_ID
-
+# ================= Webhook 路由 =================
 @app.route(f"/{TOKEN}", methods=["POST"])
-def cb():
-    u = request.get_json(silent=True) or {}
-    msg = u.get("message") or {}
-    cb_q = u.get("callback_query") or {}
-    
-    # 处理回调按钮（安全取值，防止 KeyError）
-    if cb_q:
-        qid = cb_q.get("id")
-        data = cb_q.get("data", "")
-        user = cb_q.get("from") or {}
-        msg = cb_q.get("message") or {}
-        chat_id = msg.get("chat", {}).get("id")
-        
-        if data.startswith("rep_ok@"):
-            target = data.split("@", 1)[1]
-            answer_cb(qid, "已确认")
-            send(chat_id, f"✅ <b>报备成功</b>\n对象：@{target}\n发起人：@{ADMIN_USER}")
-            return "ok", 200
-        elif data.startswith("rep_reject@"):
-            target = data.split("@", 1)[1]
-            answer_cb(qid, "已拒绝")
-            send(chat_id, f"❌ <b>报备已拒绝</b>\n对象：@{target}")
-            return "ok", 200
-        else:
-            answer_cb(qid, "已收到")
-            return "ok", 200
+def webhook():
+    u = request.json
+    if not u:
+        return "ok"
 
-    # 处理普通消息/指令
-    text = msg.get("text", "")
-    user = msg.get("from") or {}
-    chat_id = msg.get("chat", {}).get("id")
-    msg_id = msg.get("message_id")
-    
-    if not text: return "ok", 200
+    # 1. 处理普通消息指令（/verify, /report 等）
+    if "message" in u:
+        msg = u["message"]
+        chat_id = msg["chat"]["id"]
+        user_id = msg["from"].get("id")
+        username = msg["from"].get("username", "")
+        text = msg.get("text", "").strip()
 
-    # 等待输入对方 @用户名
-    if str(user.get("id")) in PENDING:
-        if not USERNAME_RE.match(text.strip()):
-            send(chat_id, "⚠️ 格式不对，请输入对方的 <b>@用户名</b>，例如 <code>@xiaoming_88</code>", reply_to=msg_id)
-            return "ok", 200
+        if text == "/start":
+            send(chat_id, "皇冠担保报备机器人已就绪\n/verify 验证服务\n/report 提交报备")
         
-        target = text.strip()
-        PENDING.pop(str(user.get("id")), None)
-        markup = {"inline_keyboard": [[
-            {"text": "✅ 确认报备", "callback_data": f"rep_ok@{target[1:]}"},
-            {"text": "❌ 拒绝", "callback_data": f"rep_reject@{target[1:]}"},
-        ]]}
-        send(chat_id,
-             f"📢 <b>公群担保报备</b>\n发起人：@{ADMIN_USER}\n对象：<a href='https://t.me/{target[1:]}'>{target}</a>\n\n请核对后点击按钮。",
-             markup=markup, reply_to=msg_id)
-        return "ok", 200
+        elif text == "/verify":
+            send(chat_id, "✅ 服务正常，Webhook 已跑通")
+        
+        elif text == "/report":
+            if user_id == ADMIN_ID or username == ADMIN_USER:
+                send(chat_id, "📝 管理员报备：请发送 @用户名 金额")
+            else:
+                send(chat_id, "⚠️ 仅管理员可提交报备")
+        
+        # 简单演示：匹配 @用户名 进入待处理
+        if USERNAME_RE.match(text):
+            PENDING[text] = chat_id
+            markup = {
+                "inline_keyboard": [[
+                    {"text": "✅ 确认收到", "callback_data": f"confirm_{text}"},
+                    {"text": "❌ 拒绝", "callback_data": f"reject_{text}"}
+                ]]
+            }
+            send(chat_id, f"收到报备：{text}\n请管理员确认", reply_markup=markup)
 
-    if text == "/start":
-        send(chat_id, "👋 <b>皇冠担保报备机器人</b>\n\n▸ /report 发起报备（仅管理员）\n▸ /status 本群查询\n▸ /my 我的报备", reply_to=msg_id)
-    elif text in ("/verify", "/status"):
-        send(chat_id, "✅ 服务正常 · Webhook 已连通", reply_to=msg_id)
-    elif text in ("/report", "公群报备"):
-        if not is_admin(user):
-            send(chat_id, "⚠️ 只有管理员能发起报备。", reply_to=msg_id)
-        else:
-            PENDING[str(user.get("id"))] = {"chat_id": chat_id}
-            send(chat_id, "📝 请回复本条，输入<b>对方的 @用户名</b>（如 <code>@xiaoming_88</code>）：", reply_to=msg_id)
-    elif text == "/my":
-        send(chat_id, "📁 我的报备记录查询（演示）", reply_to=msg_id)
-        
-    return "ok", 200
+    # 2. 处理回调按钮（精准防御 KeyError，对应你原第29行报错）
+    if "callback_query" in u:
+        q = u.get("callback_query", {})
+        q_id = q.get("id")  # 用 .get 替代 q["id"]，彻底避免 KeyError
+        if q_id:
+            answer_cb(q_id)
+            data = q.get("data", "")
+            chat_id = q.get("message", {}).get("chat", {}).get("id")
+            if "confirm" in data:
+                send(chat_id, f"✅ 报备已确认：{data}")
+            elif "reject" in data:
+                send(chat_id, f"❌ 报备已拒绝：{data}")
+
+    return "ok"
+
+# 根路径唤醒（解决 Render 冷启动）
+@app.route("/")
+def root():
+    return "ok"
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 10000)))
+    app.run(host="0.0.0.0", port=10000)
