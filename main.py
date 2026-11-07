@@ -1,24 +1,20 @@
-import os
-import asyncio
+import os, asyncio
 from flask import Flask, request, Response
 from telegram import Update
 from telegram.ext import Application, CommandHandler, ContextTypes
 
-TOKEN = "9195362168:AAFE1zCNmbRqUu93850Re3urZd8ItHgYKRA"
-
 app = Flask(__name__)
-application = Application.builder().token(TOKEN).build()
+application = Application.builder().token("9195362168:AAFE1zCNmbRqUu93850Re3urZd8ItHgYKRA").build()
 
-async def verify(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("✅ 机器人已跑通！")
+async def verify(update, context):
+    await update.message.reply_text("✅ 跑通了")
 
 application.add_handler(CommandHandler("verify", verify))
 
-@app.route("/", methods=["GET", "POST"])
+@app.route("/", methods=["POST"])
 def webhook():
-    if request.method == "POST":
-        update = Update.de_json(request.get_json(force=True), application.bot)
-        asyncio.run_coroutine_threadsafe(application.process_update(update), application.loop)
+    update = Update.de_json(request.get_json(force=True), application.bot)
+    asyncio.run_coroutine_threadsafe(application.process_update(update), application.loop)
     return Response("ok", status=200)
 
 if __name__ == "__main__":
